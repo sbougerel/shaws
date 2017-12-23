@@ -10,7 +10,7 @@ variables set. Subsequent `aws` calls will all use the temporary session token.
 
 To exit a `shaws` session, simply type `exit`.
 
-    shaws run TOKEN_CODE aws ec2 describe
+    shaws run TOKEN_CODE aws ec2 describe-instances
 
 Creates a unique session for the command executed.
 
