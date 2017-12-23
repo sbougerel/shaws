@@ -8,9 +8,8 @@ EXE=$0
 help() {
     cat << __EOF
 
-'shaws' helps you to manage temporary session tokens for AWS CLI when
+'shaws' helps you to manage temporary shell sessions for AWS CLI when
 using an MFA token.
-
 
     shaws enter TOKEN_CODE
 

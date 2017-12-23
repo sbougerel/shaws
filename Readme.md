@@ -1,6 +1,6 @@
-## shaws
+# shaws
 
-`shaws` helps you to manage temporary session tokens for AWS CLI when using an
+`shaws` helps you to manage temporary shell sessions for AWS CLI when using an
 MFA token.
 
     shaws enter TOKEN_CODE
@@ -29,7 +29,7 @@ and contains the expiry time of the session. This variable is read when calling
 
 
 
-# Options
+## Options
 
     -p,--profile PROFILE
 `shaws` sets `AWS_PROFILE` before calling `aws`. Thus you are expected to have
@@ -42,7 +42,7 @@ Calls `aws sts assume-role` instead of `aws sts get-session-token` and pass the
 given `ROLE_ARN` on the command line. Only used with `enter` command.
 
 
-# Commands
+## Commands
 
     config-attach MFA_SERIAL
 `shaws` need to use an MFA token with nearly every call. Leveraging on `aws
@@ -74,7 +74,7 @@ positional parameters, starting with `$0`.
 Shows this readme page.
 
 
-# Usage example
+## Usage example
 
 With the assumption that you have not used `aws` before:
 
@@ -91,6 +91,6 @@ And next time, just:
     $ shaws enter TOKEN_CODE
 
 
-# Installation
+## Installation
 
-Copy in `/usr/local/bin/shaws`.
+Copy `shaws` in `/usr/local/bin/shaws` and make it executable with `chmod a+x /usr/local/bin/shaws`.
