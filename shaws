@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e -o pipefail
+set -euo pipefail
 
 NULL_DEV=/dev/null
 EXE=$0
@@ -8,162 +8,176 @@ EXE=$0
 help() {
     cat << __EOF
 
-'shaws' helps you to manage temporary shell sessions for AWS CLI when
-using an MFA token.
+'shaws' requests for a session token (with 2FA), stores the token in
+environment variables and executes a new shell so all 'aws' calls
+within the new shell use the session token.
 
-    shaws enter TOKEN_CODE
+    shaws enter [PROFILE] TOKEN_CODE
 
-Get a session token and launches a child shell with the proper
-environment variables set. Subsequent `aws` calls will all use the
-temporary session token.
+'shaws' can be used to simply request session tokens or to assume a
+role. The action taken by 'shaws' depends on your './aws/config', see
+PRE-REQUISITES.
 
-To exit a 'shaws' session, simply type 'exit'.
 
-    shaws run TOKEN_CODE aws ec2 describe-instances
+Alternatively, to execute only a single command:
 
-Creates a unique session for the command executed.
+    shaws run [PROFILE] TOKEN_CODE aws ec2 describe-instances
+
 
 MFA token are configured permanently to be used for a particular
 profile with:
 
-    shaws --profile PROFILE config-attach MFA_SERIAL
+    shaws attach [PROFILE] MFA_SERIAL
+
 
 When 'shaws' is called without argument, 'shaws' tells you whether you
-are in a session or not.
+are in a shell with and active session token or not.
 
-Within a 'shaws' session, the environment variable 'SHAWS_SESSION' is
+
+Within the new shell, the environment variable 'SHAWS_SESSION' is
 defined and contains the expiry time of the session. This variable is
 read when calling 'shaws' without arguments. If you unset the variable
-within your session, 'shaws' will think you have exited your session.
+within your session, 'shaws' will assume you have exited your session.
+
+'shaws' will set 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY' and
+'AWS_SESSION_TOKEN' in the new shell. These variables have precedence
+over any other variables for AWS CLI.
 
 
-OPTIONS
+PRE-REQUISITES
 
-    -p,--profile PROFILE
-        'shaws' sets 'AWS_PROFILE' before calling 'aws'. Thus you are
-        expected to have your AWS credentials already properly set
-        up. If the argument is not given, no '--profile' will be given
-        to 'aws' which results in using the 'default' profile
-        credentials. See 'aws' cli documentation.
-
-    -r,--role ROLE_ARN
-        Calls 'aws sts assume-role' instead of 'aws sts
-        get-session-token' and pass the given 'ROLE_ARN' on the
-        command line. Only used with 'enter' command.
+'shaws' relies on AWS CLI internally, so it expects you to follow the
+AWS CLI configuration to get session token or assume roles:
+https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-role.html
 
 
 COMMANDS
 
-    config-attach MFA_SERIAL
+    attach [PROFILE] MFA_SERIAL
         'shaws' need to use an MFA token with nearly every
         call. Leveraging on 'aws configure', 'shaws' define the
-        variable 'shaws_mfa_serial' for your profile.
+        variable 'mfa_serial' for your profile.
 
-    config-detach
-        'shaws' removes the token associated with your profile.
-
-    list-devices
+    ls-devices [PROFILE]
         Equivalent to 'aws iam list-mfa-devices --user-name <your
-        username>'. 'shaws' deduce your username from your profile and
-        list your configured devices to make it easy to use the
-        'config-attach' command.
+        username>', list your configured devices to make it easy to use the
+        'attach' command.
 
-    enter TOKEN_CODE
+    enter [PROFILE] TOKEN_CODE
         Enter a 'shaws' session. Exit by typing 'exit' within the
         session. See also the '-r' option.
 
-    run TOKEN_CODE STRING ARGS...
-         Simlar to POSIX shells when the '-c' option is used. Commands
-         are read from 'STRING'. If there are arguments after the
-         string, they are assigned to the positional parameters,
-         starting with '$0'.
+    run [PROFILE] TOKEN_CODE STRING ARGS...
+        Simlar to POSIX shells when the '-c' option is used. Commands
+        are read from 'STRING'. If there are arguments after the
+        string, they are assigned to the positional parameters,
+        starting with '$0'.
 
-    run TOKEN_CODE - ARGS...
-         Simlar to POSIX shells when the '-s' option is
-         present. Commands are read from the standard input. If there
-         are arguments after the string, they are assigned to the
-         positional parameters, starting with '$0'.
+    run [PROFILE] TOKEN_CODE - ARGS...
+        Simlar to POSIX shells when the '-s' option is
+        present. Commands are read from the standard input. If there
+        are arguments after the string, they are assigned to the
+        positional parameters, starting with '$0'.
 
     help
-        Shows this readme page.
+        Shows this help.
 
 __EOF
 }
 
+PROFILE_REQUEST="${AWS_DEFAULT_PROFILE:-default}"
+TOKEN_REQUEST=
+
 exit_msg () {
-    >&2 echo $2
-    exit $1
+    >&2 echo "$2"
+    exit "$1"
 }
 
 verify_cmd () {
-    hash $1 2> $NULL_DEV || exit_msg 1 "Error: missing dependency, please install '$1'"
+    hash "$1" 2> $NULL_DEV || exit_msg 1 "Error: missing dependency, please install '$1'"
 }
 
-SHAWS_ROLE=""
-SHAWS_MFA_CONFIG_KEY="shaws_attached_serial"
+is-token () {
+    local re='^[0-9]+$'
+    [[ $1 =~ $re ]]
+}
 
-config-attach () {
+attach () {
     verify_cmd aws
-    aws configure set $SHAWS_MFA_CONFIG_KEY $1
+    [ -n "$PROFILE_REQUEST" ] && AWS_DEFAULT_PROFILE=$PROFILE_REQUEST
+    aws configure set mfa_serial $TOKEN_REQUEST
 }
 
-config-detach () {
-    verify_cmd aws
-    aws configure set $SHAWS_MFA_CONFIG_KEY ""
-}
-
-list-devices () {
+ls-devices () {
     verify_cmd aws
     verify_cmd jq
-    local username=$(aws iam get-user | jq -re '.User.UserName')
-    aws iam list-mfa-devices --user-name $username
+    [ -n "$PROFILE_REQUEST" ] && AWS_DEFAULT_PROFILE=$PROFILE_REQUEST
+    local username
+    username=$(aws iam get-user | jq -re '.User.UserName')
+    aws iam list-mfa-devices --user-name "$username"
+}
+
+get_conf () {
+    aws configure get "$@"
 }
 
 setup-aws-env () {
     verify_cmd aws
     verify_cmd jq
-    local token_code=$1
-    local attached_serial=$(aws configure get $SHAWS_MFA_CONFIG_KEY)
-    [ -z "$attached_serial" ] && exit_msg 2 "Error: No MFA token configured, run '$EXE config-attach' first"
-    local response=""
-    if [ -n "$SHAWS_ROLE" ]; then
-        response=$(aws sts assume-role --role-arn $SHAWS_ROLE --serial-number $attached_serial --role-session-name "shaws-session" --token $token_code)
+    local attached_serial
+    local role_request
+    local source_profile
+    attached_serial=$(get_conf mfa_serial --profile="$PROFILE_REQUEST")
+    [ -z "$attached_serial" ] && exit_msg 2 "Error: 'mfa_serial' not found for profile '$PROFILE_REQUEST'; check '$HOME/.aws/config'"
+    role_request=$(get_conf role_arn --profile="$PROFILE_REQUEST")
+    if [ -n "$role_request" ]; then
+        echo "Assuming role '$role_request' and requesting session token..."
+        source_profile=$(get_conf source_profile --profile="$PROFILE_REQUEST")
+        [ -z "$source_profile" ] && exit_msg 2 "Error: 'source_profile' not found for profile '$PROFILE_REQUEST'; check '$HOME/.aws/config'"
+        response=$(aws --profile="$source_profile" sts assume-role --role-arn "$role_request" --serial-number "$attached_serial" --role-session-name "shaws-session" --token "$TOKEN_REQUEST")
     else
-        response=$(aws sts get-session-token --serial-number $attached_serial --token $token_code)
+        echo "Requesting session token only (no role assumed)..."
+        response=$(aws --profile="$PROFILE_REQUEST" sts get-session-token --serial-number "$attached_serial" --token "$TOKEN_REQUEST")
     fi
-    export AWS_ACCESS_KEY_ID="$(echo ${response} | jq -re '.Credentials.AccessKeyId')"
-    export AWS_SECRET_ACCESS_KEY="$(echo ${response} | jq -re '.Credentials.SecretAccessKey')"
-    export AWS_SESSION_TOKEN="$(echo ${response} | jq -re '.Credentials.SessionToken')"
-    export SHAWS_SESSION="$(echo ${response} | jq -re '.Credentials.Expiration')"
-    unset AWS_PROFILE
+    [ $? -ne 0 ] && exit_msg 2 "Error requesting session token"
+    AWS_ACCESS_KEY_ID="$(echo "${response}" | jq -re '.Credentials.AccessKeyId')"
+    AWS_SECRET_ACCESS_KEY="$(echo "${response}" | jq -re '.Credentials.SecretAccessKey')"
+    AWS_SESSION_TOKEN="$(echo "${response}" | jq -re '.Credentials.SessionToken')"
+    SHAWS_SESSION="$(echo "${response}" | jq -re '.Credentials.Expiration')"
+    export AWS_ACCESS_KEY_ID
+    export AWS_SECRET_ACCESS_KEY
+    export AWS_SESSION_TOKEN
+    export SHAWS_SESSION
 }
 
 run () {
-    setup-aws-env $1
-    shift
+    setup-aws-env >"$NULL_DEV"
     if [ "$1" == "-" ]; then
         shift
-        exec $SHELL -s $*
+        exec "$SHELL" -s "$@"
     else
-        exec $SHELL -c "$*"
+        exec "$SHELL" -c "$@"
     fi
 }
 
 enter () {
-    setup-aws-env $1
-    exec $SHELL -i
+    setup-aws-env
+    echo Session "$AWS_ACCESS_KEY_ID" valid until "$(date -d "$SHAWS_SESSION")"
+    exec "$SHELL" -i
 }
 
 if [[ $# -eq 0 ]]; then
+    set +eu
     if [ -n "$SHAWS_SESSION" ]; then
         if [[ $(date +"%s") -lt $(date -d "$SHAWS_SESSION" +"%s") ]]; then
-            echo "Your session $AWS_ACCESS_KEY_ID is valid until" $(date -d "$SHAWS_SESSION")
+            echo Your session "$AWS_ACCESS_KEY_ID" is valid until "$(date -d "$SHAWS_SESSION")"
         else
             exit_msg 10 "Your session has expired, 'exit' and '$EXE enter' into a new one"
         fi
     else
-        exit_msg 20 "There are no active sessions right now, '$EXE enter <token code>' to begin"
+        exit_msg 20 "There are no active sessions right now, '$EXE enter [PROFILE] <MFA code>' to begin"
     fi
+    set +eu
 fi
 
 while [[ $# -gt 0 ]]; do
@@ -172,44 +186,56 @@ while [[ $# -gt 0 ]]; do
              help
              exit 0
              ;;
-         -p|--profile)
+         attach)
              shift
-             AWS_PROFILE="$1"
-             ;;
-         -r|--role)
-             shift
-             SHAWS_ROLE="$1"
-             ;;
-         config-attach)
-             shift
-             [ -n "$1" ] || exit_msg 2 "Which mfa device do you want to attach? Try '$EXE list-devices'"
-             [ -n "$2" ] && exit_msg 2 "Error: unknown positional argument: '$2'"
-             config-attach $1
+             [ -n "$1" ] || exit_msg 2 "Which mfa device do you want to attach? Try '$EXE ls-devices'"
+             if [ -n "$2" ]; then
+                 [[ $# -gt 2 ]] && exit_msg 2 "Error: unknown positional argument: '$3'"
+                 PROFILE_REQUEST=$1
+                 TOKEN_REQUEST=$2
+             else
+                 TOKEN_REQUEST=$1
+             fi
+             attach
              break
              ;;
-         config-detach)
+         ls-devices)
              shift
-             [ -n "$1" ] && exit_msg 2 "Error: unknown positional argument: '$1'"
-             config-detach
-             break
-             ;;
-         list-devices)
-             shift
-             [ -n "$1" ] && exit_msg 2 "Error: unknown positional argument: '$1'"
-             list-devices
+             if [ -n "$1" ]; then
+                 [[ $# -gt 1 ]] && exit_msg 2 "Error: unknown positional argument: '$2'"
+                 PROFILE_REQUEST=$1
+             fi
+             ls-devices
              break
              ;;
          run)
              shift
              [ -n "$1" ] || exit_msg 2 "What would you like to run?"
-             run $*
+             if is-token "$1"; then
+                 TOKEN_REQUEST=$1
+             else
+                 [ -n "$2" ] || exit_msg 2 "Expected an MFA code after profile '$1'"
+                 PROFILE_REQUEST=$1
+                 TOKEN_REQUEST=$2
+                 shift
+             fi
+             shift
+             run "$@"
              break
              ;;
          enter)
              shift
              [ -n "$1" ] || exit_msg 2 "Missing token code in after 'enter'"
-             [ -n "$2" ] && exit_msg 2 "Error: unknown positional argument '$2'"
-             enter $1
+             if is-token "$1"; then
+                 [[ $# -gt 1 ]] && exit_msg 2 "Error: unknown positional argument: '$2'"
+                 TOKEN_REQUEST=$1
+             else
+                 [ -n "$2" ] || exit_msg 2 "Expected an MFA code after profile '$1'"
+                 [[ $# -gt 2 ]] && exit_msg 2 "Error: unknown positional argument: '$3'"
+                 PROFILE_REQUEST=$1
+                 TOKEN_REQUEST=$2
+             fi
+             enter
              break
              ;;
          *)
