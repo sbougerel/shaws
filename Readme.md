@@ -7,7 +7,7 @@ within the new shell use the session token.
     shaws enter [PROFILE] TOKEN_CODE
 
 `shaws` can be used to simply request session tokens or to assume a role. The
-action taken by `shaws` depends on your `./aws/config`, see PRE-REQUISITES.
+action taken by `shaws` depends on your `./aws/config`, see [pre-requisites](#Pre-requisites).
 
 
 Alternatively, to execute only a single command:
