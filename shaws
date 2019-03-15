@@ -134,10 +134,10 @@ setup-aws-env () {
         echo "Assuming role '$role_request' and requesting session token..."
         source_profile=$(get_conf source_profile --profile="$PROFILE_REQUEST")
         [ -z "$source_profile" ] && exit_msg 2 "Error: 'source_profile' not found for profile '$PROFILE_REQUEST'; check '$HOME/.aws/config'"
-        response=$(aws --profile="$source_profile" sts assume-role --role-arn "$role_request" --serial-number "$attached_serial" --role-session-name "shaws-session" --token "$TOKEN_REQUEST")
+        response=$(aws --profile="$source_profile" sts assume-role --duration-seconds 43200 --role-arn "$role_request" --serial-number "$attached_serial" --role-session-name "shaws-session" --token "$TOKEN_REQUEST")
     else
         echo "Requesting session token only (no role assumed)..."
-        response=$(aws --profile="$PROFILE_REQUEST" sts get-session-token --serial-number "$attached_serial" --token "$TOKEN_REQUEST")
+        response=$(aws --profile="$PROFILE_REQUEST" sts get-session-token --duration-seconds 129600 --serial-number "$attached_serial" --token "$TOKEN_REQUEST")
     fi
     [ $? -ne 0 ] && exit_msg 2 "Error requesting session token"
     AWS_ACCESS_KEY_ID="$(echo "${response}" | jq -re '.Credentials.AccessKeyId')"
