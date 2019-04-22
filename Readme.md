@@ -87,6 +87,8 @@ other variables for AWS CLI.
 
 ## Pre-requisites
 
+`shaws` requires Bash to run.
+
 `shaws` relies on AWS CLI internally, so it expects you to follow the
 AWS CLI configuration to get session token or assume roles:
 https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-role.html
