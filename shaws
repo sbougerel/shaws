@@ -3,7 +3,7 @@
 set -uo pipefail
 
 NULL_DEV=/dev/null
-EXE=$0
+EXE=$(basename $0)
 
 help() {
     cat << __EOF
@@ -190,6 +190,7 @@ enter () {
 }
 
 if [[ $# -eq 0 ]]; then
+    set +u
     if [ -n "$SHAWS_SESSION" ]; then
         if [[ $(date +"%s") -lt $(date -d "$SHAWS_SESSION" +"%s") ]]; then
             echo Your session "$AWS_ACCESS_KEY_ID" is valid until "$(date -d "$SHAWS_SESSION")"
@@ -201,7 +202,7 @@ if [[ $# -eq 0 ]]; then
             exit_msg 10 "Your session has expired, 'exit' and '$EXE enter' into a new one"
         fi
     else
-        exit_msg 20 "There are no active sessions right now, '$EXE enter [PROFILE] <MFA code>' to begin"
+        exit_msg 20 "There are no active sessions right now, '$EXE [PROFILE] enter <MFA code>' to begin"
     fi
     exit 0
 fi
